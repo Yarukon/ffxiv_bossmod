@@ -14,3 +14,9 @@ public enum ReplayLogFormat
     [PropertyDisplay("Verbose text")]
     TextVerbose,
 }
+
+public static class ReplayLogFormatMagic
+{
+    public static readonly FourCC CompressedBinary = new("BLCB"u8); // bossmod log compressed brotli
+    public static readonly FourCC RawBinary = new("BLOG"u8); // bossmod log
+}

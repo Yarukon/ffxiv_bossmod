@@ -42,7 +42,7 @@ namespace BossMod;
 // 6. ground-targeted action queueing
 //    ground-targeted actions can't be queued, making using them efficiently tricky
 //    this feature allows queueing them, plus provides options to execute them automatically either at target's position or at cursor's position
-unsafe class ActionManagerEx : IDisposable
+unsafe sealed class ActionManagerEx : IDisposable
 {
     public static ActionManagerEx? Instance;
 
@@ -80,28 +80,24 @@ unsafe class ActionManagerEx : IDisposable
     public ActionID GTSpell => new(ActionType.Spell, GTSpellID);
     public uint GTUnkArg => Utils.ReadField<uint>(_inst, 0x94);
     public ulong GTUnkObj => Utils.ReadField<ulong>(_inst, 0x98);
-    public byte GT_uA0 => Utils.ReadField<byte>(_inst, 0xA0);
-    public byte GT_uB8 => Utils.ReadField<byte>(_inst, 0xB8);
-    public uint GT_uBC => Utils.ReadField<byte>(_inst, 0xBC);
+    public byte GTUnkA0 => Utils.ReadField<byte>(_inst, 0xA0);
+    public byte GTUnkB8 => Utils.ReadField<byte>(_inst, 0xB8);
+    public uint GTUnkBC => Utils.ReadField<byte>(_inst, 0xBC);
 
     public ushort LastUsedActionSequence => Utils.ReadField<ushort>(_inst, 0x110);
 
     public float EffectiveAnimationLock => AnimationLock + CastTimeRemaining; // animation lock starts ticking down only when cast ends
     public float EffectiveAnimationLockDelay => AnimationLockDelayMax <= 0.5f ? AnimationLockDelayMax : MathF.Min(AnimationLockDelayAverage, 0.1f); // this is a conservative estimate
 
-    public event Action<ClientActionRequest>? ActionRequested;
-
-    public delegate void ActionEffectReceivedDelegate(ulong sourceID, ActorCastEvent info);
-    public event ActionEffectReceivedDelegate? ActionEffectReceived;
-
-    public delegate void EffectResultReceivedDelegate(ulong targetID, uint seq, int targetIndex);
-    public event EffectResultReceivedDelegate? EffectResultReceived;
+    public Event<ClientActionRequest> ActionRequested = new();
+    public Event<ulong, ActorCastEvent> ActionEffectReceived = new();
+    public Event<ulong, uint, int> EffectResultReceived = new();
 
     public InputOverride InputOverride;
     public ActionManagerConfig Config;
     public CommonActions.NextAction AutoQueue; // TODO: consider using native 'queue' fields for this?
     public bool MoveMightInterruptCast { get; private set; } // if true, moving now might cause cast interruption (for current or queued cast)
-    private ActionManager* _inst;
+    private readonly ActionManager* _inst;
     private float _lastReqInitialAnimLock;
     private int _lastReqSequence = -1;
     private float _useActionInPast; // if >0 while using an action, cooldown/anim lock will be reduced by this amount as if action was used a bit in the past
@@ -109,30 +105,30 @@ unsafe class ActionManagerEx : IDisposable
     private int _restoreCntr;
 
     private delegate bool GetGroundTargetPositionDelegate(ActionManager* self, Vector3* outPos);
-    private GetGroundTargetPositionDelegate _getGroundTargetPositionFunc;
+    private readonly GetGroundTargetPositionDelegate _getGroundTargetPositionFunc;
 
     private delegate void FaceTargetDelegate(ActionManager* self, Vector3* position, ulong targetID);
-    private FaceTargetDelegate _faceTargetFunc;
+    private readonly FaceTargetDelegate _faceTargetFunc;
 
     private delegate void UpdateDelegate(ActionManager* self);
-    private Hook<UpdateDelegate> _updateHook;
+    private readonly Hook<UpdateDelegate> _updateHook;
 
     private delegate bool UseActionLocationDelegate(ActionManager* self, ActionType actionType, uint actionID, ulong targetID, Vector3* targetPos, uint itemLocation);
-    private Hook<UseActionLocationDelegate> _useActionLocationHook;
+    private readonly Hook<UseActionLocationDelegate> _useActionLocationHook;
 
     private delegate bool UseBozjaFromHolsterDirectorDelegate(void* self, uint holsterIndex, uint slot);
-    private Hook<UseBozjaFromHolsterDirectorDelegate> _useBozjaFromHolsterDirectorHook;
+    private readonly Hook<UseBozjaFromHolsterDirectorDelegate> _useBozjaFromHolsterDirectorHook;
 
     private delegate void ProcessPacketActionEffectDelegate(uint casterID, FFXIVClientStructs.FFXIV.Client.Game.Character.BattleChara* casterObj, Vector3* targetPos, Network.ServerIPC.ActionEffectHeader* header, ulong* effects, ulong* targets);
-    private Hook<ProcessPacketActionEffectDelegate> _processPacketActionEffectHook;
+    private readonly Hook<ProcessPacketActionEffectDelegate> _processPacketActionEffectHook;
 
     private delegate void ProcessPacketEffectResultDelegate(uint targetID, byte* packet, byte replaying);
-    private Hook<ProcessPacketEffectResultDelegate> _processPacketEffectResultHook;
-    private Hook<ProcessPacketEffectResultDelegate> _processPacketEffectResultBasicHook;
+    private readonly Hook<ProcessPacketEffectResultDelegate> _processPacketEffectResultHook;
+    private readonly Hook<ProcessPacketEffectResultDelegate> _processPacketEffectResultBasicHook;
 
     // it's a static function of StatusManager really
     private delegate bool CancelStatusDelegate(uint statusId, uint sourceId);
-    private CancelStatusDelegate _cancelStatusFunc;
+    private readonly CancelStatusDelegate _cancelStatusFunc;
 
     public ActionManagerEx()
     {
@@ -196,10 +192,7 @@ unsafe class ActionManagerEx : IDisposable
         return _getGroundTargetPositionFunc(_inst, &res) ? res : null;
     }
 
-    public void FaceTarget(Vector3 position, ulong unkObjID = GameObject.InvalidGameObjectId)
-    {
-        _faceTargetFunc(_inst, &position, unkObjID);
-    }
+    public void FaceTarget(Vector3 position, ulong unkObjID = GameObject.InvalidGameObjectId) => _faceTargetFunc(_inst, &position, unkObjID);
     public void FaceDirection(WDir direction)
     {
         var player = Service.ClientState.LocalPlayer;
@@ -228,11 +221,15 @@ unsafe class ActionManagerEx : IDisposable
             GetCooldown(ref cooldowns[i], rg++);
         rg = _inst->GetRecastGroupDetail(80);
         if (rg != null)
+        {
             for (int i = 80; i < 82; ++i)
                 GetCooldown(ref cooldowns[i], rg++);
+        }
         else
+        {
             for (int i = 80; i < 82; ++i)
                 cooldowns[i] = default;
+        }
     }
 
     public float GCD()
@@ -268,15 +265,11 @@ unsafe class ActionManagerEx : IDisposable
         => _inst->GetRecastGroup((int)action.Type, action.ID);
 
     public bool UseAction(ActionID action, ulong targetID, uint itemLocation, uint callType, uint comboRouteID, bool* outOptGTModeStarted)
-    {
-        return _inst->UseAction((FFXIVClientStructs.FFXIV.Client.Game.ActionType)action.Type, action.ID, targetID, itemLocation, callType, comboRouteID, outOptGTModeStarted);
-    }
+        => _inst->UseAction((FFXIVClientStructs.FFXIV.Client.Game.ActionType)action.Type, action.ID, targetID, itemLocation, callType, comboRouteID, outOptGTModeStarted);
 
     // skips queueing etc
     public bool UseActionRaw(ActionID action, ulong targetID = GameObject.InvalidGameObjectId, Vector3 targetPos = new(), uint itemLocation = 0)
-    {
-        return UseActionLocationDetour(_inst, action.Type, action.ID, targetID, &targetPos, itemLocation);
-    }
+        => UseActionLocationDetour(_inst, action.Type, action.ID, targetID, &targetPos, itemLocation);
 
     // does all the sanity checks (that status is on actor, is a buff that can be canceled, etc.)
     // on success, the status manager is updated immediately, meaning that no rate limiting is needed
@@ -340,6 +333,9 @@ unsafe class ActionManagerEx : IDisposable
             var status = GetActionStatus(actionAdj, targetID);
             if (status == 0)
             {
+                if (AutoQueue.FacingAngle != null)
+                    FaceDirection(AutoQueue.FacingAngle.Value.ToDirection());
+
                 var res = AutoQueue.Action.Type switch
                 {
                     ActionType.Item => UseActionRaw(actionAdj, targetID, AutoQueue.TargetPos, 65535),
@@ -397,40 +393,37 @@ unsafe class ActionManagerEx : IDisposable
     {
         var packetAnimLock = header->animationLockTime;
         var action = new ActionID(header->actionType, header->actionId);
-        if (ActionEffectReceived != null)
+
+        // note: there's a slight difference with dispatching event from here rather than from packet processing (ActionEffectN) functions
+        // 1. action id is already unscrambled
+        // 2. this function won't be called if caster object doesn't exist
+        // the last point is deemed to be minor enough for us to not care, as it simplifies things (no need to hook 5 functions)
+        var info = new ActorCastEvent
         {
-            // note: there's a slight difference with dispatching event from here rather than from packet processing (ActionEffectN) functions
-            // 1. action id is already unscrambled
-            // 2. this function won't be called if caster object doesn't exist
-            // the last point is deemed to be minor enough for us to not care, as it simplifies things (no need to hook 5 functions)
-            var info = new ActorCastEvent
-            {
-                Action = action,
-                MainTargetID = header->animationTargetId,
-                AnimationLockTime = header->animationLockTime,
-                MaxTargets = header->NumTargets,
-                TargetPos = *targetPos,
-                SourceSequence = header->SourceSequence,
-                GlobalSequence = header->globalEffectCounter,
-            };
-            for (int i = 0; i < header->NumTargets; ++i)
-            {
-                var target = new ActorCastEvent.Target();
-                target.ID = targets[i];
-                for (int j = 0; j < 8; ++j)
-                    target.Effects[j] = effects[i * 8 + j];
-                info.Targets.Add(target);
-            }
-            ActionEffectReceived.Invoke(casterID, info);
+            Action = action,
+            MainTargetID = header->animationTargetId,
+            AnimationLockTime = header->animationLockTime,
+            MaxTargets = header->NumTargets,
+            TargetPos = *targetPos,
+            SourceSequence = header->SourceSequence,
+            GlobalSequence = header->globalEffectCounter,
+        };
+        for (int i = 0; i < header->NumTargets; ++i)
+        {
+            var targetEffects = new ActionEffects();
+            for (int j = 0; j < ActionEffects.MaxCount; ++j)
+                targetEffects[j] = effects[i * 8 + j];
+            info.Targets.Add(new(targets[i], targetEffects));
         }
+        ActionEffectReceived.Fire(casterID, info);
 
         var prevAnimLock = AnimationLock;
         _processPacketActionEffectHook.Original(casterID, casterObj, targetPos, header, effects, targets);
         var currAnimLock = AnimationLock;
 
-        if (casterID != Service.ClientState.LocalPlayer?.ObjectId)
+        if (casterID != Service.ClientState.LocalPlayer?.ObjectId || header->SourceSequence == 0 && _lastReqSequence != 0)
         {
-            // non-player-initiated
+            // non-player-initiated; TODO: reconsider the condition for header->SourceSequence == 0 (e.g. autos) - could they happen while we wait for stuff like reholster?..
             if (currAnimLock != prevAnimLock)
                 Service.Log($"[AMEx] Animation lock updated by non-player-initiated action: #{header->SourceSequence} {casterID:X} {action} {prevAnimLock:f3} -> {currAnimLock:f3}");
             return;
@@ -477,30 +470,24 @@ unsafe class ActionManagerEx : IDisposable
 
     private void ProcessPacketEffectResultDetour(uint targetID, byte* packet, byte replaying)
     {
-        if (EffectResultReceived != null)
+        var count = packet[0];
+        var p = (Network.ServerIPC.EffectResultEntry*)(packet + 4);
+        for (int i = 0; i < count; ++i)
         {
-            var count = packet[0];
-            var p = (Network.ServerIPC.EffectResultEntry*)(packet + 4);
-            for (int i = 0; i < count; ++i)
-            {
-                EffectResultReceived.Invoke(targetID, p->RelatedActionSequence, p->RelatedTargetIndex);
-                ++p;
-            }
+            EffectResultReceived.Fire(targetID, p->RelatedActionSequence, p->RelatedTargetIndex);
+            ++p;
         }
         _processPacketEffectResultHook.Original(targetID, packet, replaying);
     }
 
     private void ProcessPacketEffectResultBasicDetour(uint targetID, byte* packet, byte replaying)
     {
-        if (EffectResultReceived != null)
+        var count = packet[0];
+        var p = (Network.ServerIPC.EffectResultBasicEntry*)(packet + 4);
+        for (int i = 0; i < count; ++i)
         {
-            var count = packet[0];
-            var p = (Network.ServerIPC.EffectResultBasicEntry*)(packet + 4);
-            for (int i = 0; i < count; ++i)
-            {
-                EffectResultReceived.Invoke(targetID, p->RelatedActionSequence, p->RelatedTargetIndex);
-                ++p;
-            }
+            EffectResultReceived.Fire(targetID, p->RelatedActionSequence, p->RelatedTargetIndex);
+            ++p;
         }
         _processPacketEffectResultBasicHook.Original(targetID, packet, replaying);
     }
@@ -532,17 +519,6 @@ unsafe class ActionManagerEx : IDisposable
         var recastElapsed = recast != null ? recast->Elapsed : 0;
         var recastTotal = recast != null ? recast->Total : 0;
         Service.Log($"[AMEx] UAL #{seq} {action} @ {targetID:X} / {Utils.Vec3String(targetPos)}, ALock={AnimationLock:f3}, CTR={CastTimeRemaining:f3}, CD={recastElapsed:f3}/{recastTotal:f3}, GCD={GCD():f3}");
-        ActionRequested?.Invoke(new()
-        {
-            Action = action,
-            TargetID = targetID,
-            TargetPos = targetPos,
-            SourceSequence = (uint)seq,
-            InitialAnimationLock = AnimationLock,
-            InitialCastTimeElapsed = CastSpellID != 0 ? CastTimeElapsed : 0,
-            InitialCastTimeTotal = CastSpellID != 0 ? CastTimeTotal : 0,
-            InitialRecastElapsed = recastElapsed,
-            InitialRecastTotal = recastTotal,
-        });
+        ActionRequested.Fire(new(action, targetID, targetPos, (uint)seq, AnimationLock, CastSpellID != 0 ? CastTimeElapsed : 0, CastSpellID != 0 ? CastTimeTotal : 0, recastElapsed, recastTotal));
     }
 }

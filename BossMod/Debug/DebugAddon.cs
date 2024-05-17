@@ -5,15 +5,15 @@ using ImGuiNET;
 
 namespace BossMod;
 
-public unsafe class DebugAddon : IDisposable
+public unsafe sealed class DebugAddon : IDisposable
 {
     delegate nint AddonReceiveEventDelegate(AtkEventListener* self, AtkEventType eventType, uint eventParam, AtkEvent* eventData, ulong* inputData);
     delegate void* AgentReceiveEventDelegate(AgentInterface* self, void* eventData, AtkValue* values, int valueCount, ulong eventKind);
 
-    private Dictionary<nint, Hook<AddonReceiveEventDelegate>> _rcvAddonHooks = new();
-    private Dictionary<nint, Hook<AgentReceiveEventDelegate>> _rcvAgentHooks = new();
-    private Dictionary<string, nint> _addonRcvs = new();
-    private Dictionary<uint, nint> _agentRcvs = new();
+    private readonly Dictionary<nint, Hook<AddonReceiveEventDelegate>> _rcvAddonHooks = [];
+    private readonly Dictionary<nint, Hook<AgentReceiveEventDelegate>> _rcvAgentHooks = [];
+    private readonly Dictionary<string, nint> _addonRcvs = [];
+    private readonly Dictionary<uint, nint> _agentRcvs = [];
     private string _newHook = "";
 
     public DebugAddon()
@@ -77,7 +77,7 @@ public unsafe class DebugAddon : IDisposable
                 }
             }
         }
-        if (_newHook.Length > 0 && uint.TryParse(_newHook, out var agentId) && agentId > 0 && !_agentRcvs.ContainsKey(agentId) && AgentModule.Instance()->GetAgentByInternalID(agentId) is var agent && agent != null)
+        if (_newHook.Length > 0 && uint.TryParse(_newHook, out var agentId) && agentId > 0 && !_agentRcvs.ContainsKey(agentId) && AgentModule.Instance()->GetAgentByInternalId((AgentId)agentId) is var agent && agent != null)
         {
             ImGui.SameLine();
             if (ImGui.Button("Hook agent!"))
