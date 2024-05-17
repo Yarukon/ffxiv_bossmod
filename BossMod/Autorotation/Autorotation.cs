@@ -61,7 +61,7 @@ sealed class Autorotation : IDisposable
         );
 
         _useActionHook = Service.Hook.HookFromSignature<UseActionDelegate>("E8 ?? ?? ?? ?? EB 64 B1 01", UseActionDetour);
-            
+
         if (!Service.Config.Get<AutorotationConfig>().Disable_Hook)
         _useActionHook.Enable();
     }
@@ -74,7 +74,7 @@ sealed class Autorotation : IDisposable
         if (!Service.Config.Get<AutorotationConfig>().Disable_Hook)
             _useActionHook.Dispose();
 
-        _classActions?.Dispose();
+        ClassActions?.Dispose();
         _autoHints.Dispose();
     }
 

@@ -6,19 +6,19 @@ sealed class IPCProvider : IDisposable
 {
     private Action? _disposeActions;
 
-    public IPCProvider(Autorotation autorotation)
+    public IPCProvider(BossModuleManager _bossmod)
     {
         // TODO: this really needs to be reconsidered, this exposes implementation detail
         // for usecase description, see PR 330 - really AI itself should handle heal range
-        Register("ActiveModuleComponentBaseList", () => autorotation.Bossmods.ActiveModule?.Components.Select(c => c.GetType().BaseType?.Name).ToList() ?? default);
-        Register("ActiveModuleComponentList", () => autorotation.Bossmods.ActiveModule?.Components.Select(c => c.GetType().Name).ToList() ?? default);
-        Register("ActiveModuleHasComponent", (string name) => autorotation.Bossmods.ActiveModule?.Components.Any(c => c.GetType().Name == name || c.GetType().BaseType?.Name == name) ?? false);
+        Register("ActiveModuleComponentBaseList", () => _bossmod.ActiveModule?.Components.Select(c => c.GetType().BaseType?.Name).ToList() ?? default);
+        Register("ActiveModuleComponentList", () => _bossmod.ActiveModule?.Components.Select(c => c.GetType().Name).ToList() ?? default);
+        Register("ActiveModuleHasComponent", (string name) => _bossmod.ActiveModule?.Components.Any(c => c.GetType().Name == name || c.GetType().BaseType?.Name == name) ?? false);
 
         Register("HasModule", (GameObject obj) => ModuleRegistry.FindByOID(obj.DataId) != null);
         Register("IsMoving", () => ActionManagerEx.Instance!.InputOverride.IsMoving());
-        Register("ForbiddenZonesCount", () => autorotation.Hints.ForbiddenZones.Count);
-        Register("InitiateCombat", () => autorotation.ClassActions?.UpdateAutoAction(CommonActions.AutoActionAIFight, float.MaxValue, true));
-        Register("SetAutorotationState", (bool state) => Service.Config.Get<AutorotationConfig>().Enabled = state);
+        Register("ForbiddenZonesCount", () => 0);
+        Register("InitiateCombat", () => { });
+        Register("SetAutorotationState", (bool state) => false);
     }
 
     public void Dispose() => _disposeActions?.Invoke();

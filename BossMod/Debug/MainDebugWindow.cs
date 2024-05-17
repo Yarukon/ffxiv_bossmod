@@ -4,15 +4,15 @@ using ImGuiNET;
 
 namespace BossMod;
 
-class MainDebugWindow(WorldState ws, Autorotation autorot) : UIWindow("Boss mod debug UI", false, new(300, 200))
+class MainDebugWindow(WorldState ws) : UIWindow("Boss mod debug UI", false, new(300, 200))
 {
     private readonly DebugObjects _debugObjects = new();
     private readonly DebugParty _debugParty = new();
     private readonly DebugGraphics _debugGraphics = new();
     private readonly DebugAction _debugAction = new(ws);
     private readonly DebugHate _debugHate = new();
-    private readonly DebugInput _debugInput = new(autorot);
-    private readonly DebugAutorotation _debugAutorot = new(autorot);
+    // private readonly DebugInput _debugInput = new(autorot);
+    // private readonly DebugAutorotation _debugAutorot = new(autorot);
     private readonly DebugClassDefinitions _debugClassDefinitions = new(ws);
     private readonly DebugAddon _debugAddon = new();
     private readonly DebugTiming _debugTiming = new();

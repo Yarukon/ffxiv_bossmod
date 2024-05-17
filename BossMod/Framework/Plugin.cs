@@ -17,9 +17,9 @@ public sealed class Plugin : IDalamudPlugin
     private readonly WorldState _ws;
     private readonly WorldStateGameSync _wsSync;
     private readonly BossModuleManager _bossmod;
-    private readonly Autorotation _autorotation;
-    private readonly AI.AIManager _ai;
-    private readonly AI.Broadcast _broadcast;
+    // private readonly Autorotation _autorotation;
+    // private readonly AI.AIManager _ai;
+    // private readonly AI.Broadcast _broadcast;
     private readonly IPCProvider _ipc;
     private TimeSpan _prevUpdateTime;
 
@@ -64,13 +64,13 @@ public sealed class Plugin : IDalamudPlugin
         // _autorotation = new(_bossmod);
         // _ai = new(_autorotation);
         // _broadcast = new();
-        // _ipc = new(_autorotation);
+        _ipc = new(_bossmod);
 
         _wndBossmod = new(_bossmod);
         _wndBossmodPlan = new(_bossmod);
         _wndBossmodHints = new(_bossmod);
         _wndReplay = new(_ws, new(dalamud.ConfigDirectory.FullName + "/replays"));
-        _wndDebug = new(_ws, _autorotation);
+        _wndDebug = new(_ws);
 
         dalamud.UiBuilder.DisableAutomaticUiHide = true;
         dalamud.UiBuilder.Draw += DrawUI;
@@ -85,10 +85,10 @@ public sealed class Plugin : IDalamudPlugin
         _wndBossmodHints.Dispose();
         _wndBossmodPlan.Dispose();
         _wndBossmod.Dispose();
-        // _ipc.Dispose();
+        _ipc.Dispose();
         _bossmod.Dispose();
-        _ai.Dispose();
-        _autorotation.Dispose();
+        // _ai.Dispose();
+        // _autorotation.Dispose();
         _wsSync.Dispose();
         ActionManagerEx.Instance?.Dispose();
         BozjaInterop.Instance?.Dispose();
